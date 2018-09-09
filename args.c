@@ -89,7 +89,6 @@ option_t* init_void_option(option_t* option,const char* key_word, void (* f)())
 {
   option_t* opt = partial_init(option,key_word);
   opt->action.option_void = f;
-  printf("init_void_option\n");
   opt->type = VOID;
   return opt;
 }
@@ -204,7 +203,6 @@ option_t* parser(int argc, const char* argv[], dictionnary_t* dico)
       if (d->type == VOID) {
 
         options = init_void_option(options,d->name, d->action.option_void);
-        printf("arc <%s> ss\n", argv[1] );
 
       }else if ( i+1<argc && argv[i+1] != NULL) {
 
@@ -319,7 +317,6 @@ void execute(option_t* options)
     switch (tmp->type) {
       case VOID:
         tmp->action.option_void();
-        printf("execute\n");
         break;
       case INT:
         tmp->action.option_int(tmp->value.int_value);
