@@ -105,18 +105,19 @@ option_t* init_int_option(option_t* option,const char* key_word, void (* f)(int)
 option_t* init_float_option(option_t* option,const char* key_word, void (* f)(float),const char* value)
 {
   option_t* opt = partial_init(option,key_word);
-  option->action.option_float = f;
-  option->type = FLOAT;
+  opt->action.option_float = f;
+  opt->type = FLOAT;
   opt->value.float_value = (float)atof(value);
-  return option;
+  return opt;
 }
 
 option_t* init_string_option(option_t* option,const char* key_word, void (* f)(const char *),const char* value)
 {
   option_t* opt = partial_init(option,key_word);
-  option->action.option_string = f;
-  option->type = STRING;
+  opt->action.option_string = f;
+  opt->type = STRING;
   opt->value.string_value = str_copy(value);
+  return opt;
 }
 
 bool is_letter(char c)
@@ -192,20 +193,14 @@ dictionnary_t* matched(const char* key_word, dictionnary_t* dico)
 option_t* parser(int argc, const char* argv[], dictionnary_t* dico)
 {
   if (argc <= 1 || dico == NULL) return NULL;
-
   option_t* options = NULL;
   dictionnary_t* d = NULL;
 
   for (int i = 1; i < argc; i++) {
-
     if ((d = matched(argv[i], dico)) != NULL) {
-
       if (d->type == VOID) {
-
         options = init_void_option(options,d->name, d->action.option_void);
-
-      }else if ( i+1<argc && argv[i+1] != NULL) {
-
+      }else if ( i+1<argc) {
         switch (d->type) {
           case INT:
             options = init_int_option(options,d->name, d->action.option_void,argv[i+1]);
@@ -218,9 +213,9 @@ option_t* parser(int argc, const char* argv[], dictionnary_t* dico)
           break;
         }
         i++;
-
       }
-
+    }else{
+      printf("Something went wrong %d\n",i);
     }
   }
 
@@ -312,7 +307,7 @@ void execute(option_t* options)
 {
   if (options == NULL) return;
   options = get_first(options);
-  option_t* tmp;
+  option_t* tmp = options;
   while (tmp != NULL) {
     switch (tmp->type) {
       case VOID:

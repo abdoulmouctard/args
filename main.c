@@ -13,9 +13,7 @@ int main(int argc, char const *argv[])
 {
   dictionnary_generator();
   option_t* options = parser(argc, argv, DICTIONNARY);
-
   execute(options);
-
   return 0;
 }
 
@@ -39,16 +37,16 @@ void f_void()
 
 void f_int(int p)
 {
-  printf("Hello i'am a int function, and my param = %d \n",p);
+  printf("Hello i'am a int function, and my param = |%d| \n",p);
 }
 
 void f_float(float p)
 {
-  printf("Hello i'am a int function, and my param = %f \n",p);
+  printf("Hello i'am a float function, and my param = |%f| \n",p);
 }
 
 void f_string(const char* p)
 {
-  printf("Hello i'am a int function, and my param = %s \n",p);
+  printf("Hello i'am a string function, and my param = |%s| \n",p);
 
 }
