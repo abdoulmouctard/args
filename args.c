@@ -1,8 +1,28 @@
 #include "args.h"
 #include <string.h>
 #include <stdbool.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 
+#define COLOR_NC "\e[0m" // No Color
+#define COLOR_RED "\e[1;31m"
+#define COLOR_WHITE "\e[1;37m"
+#define COLOR_YELLOW "\e[1;33m"
+#define COLOR_LIGHT_CYAN "\e[1;36m"
+
+// #define COLOR_GREEN "\e[0;32m"
+// #define COLOR_BLACK "\e[0;30m"
+// #define COLOR_BLUE "\e[0;34m"
+// #define COLOR_LIGHT_BLUE "\e[1;34m"
+// #define COLOR_LIGHT_GREEN "\e[1;32m"
+// #define COLOR_CYAN "\e[0;36m"
+// #define COLOR_LIGHT_RED "\e[1;31m"
+// #define COLOR_PURPLE "\e[0;35m"
+// #define COLOR_LIGHT_PURPLE "\e[1;35m"
+// #define COLOR_BROWN "\e[0;33m"
+// #define COLOR_GRAY "\e[0;30m"
+// #define COLOR_LIGHT_GRAY "\e[0;37m"
 
 typedef enum
 {
@@ -18,6 +38,7 @@ typedef union
   void (*option_int)(int);
   void (*option_float)(float);
   void (*option_string)(const char *);
+  // ADD HERE YOUR CUSTOM FUNTIONS
 }action_t;
 
 struct dictionnary
@@ -25,6 +46,8 @@ struct dictionnary
   char* name;
   type_t type;
   action_t action;
+  enum{SORT=0,LONG}nature;
+  bool used;
   struct dictionnary* next;
 };
 
@@ -42,10 +65,33 @@ struct option
   }value;
 };
 
-int str_count(const char * str,char c)
+
+typedef enum{
+  INFO = 1,
+  WARNING,
+  ERROR
+}message_t;
+
+
+void alert(const char* message, message_t type)
 {
-  return (str == NULL || str[0] == '\0')?0:(1+str_count(str+1, c));
+  if (message == NULL) return;
+  int file_desc = STDIN_FILENO;
+  char buffer[2048] = {'\0'};
+  if (type == INFO) {
+    int n = sprintf(buffer, "\n%s  %s!!-INFORMATION-!! %s=>%s %s \n",COLOR_NC,COLOR_LIGHT_CYAN, COLOR_WHITE, COLOR_NC, message);
+    write(file_desc, buffer, n+1);
+  }else if (type == WARNING) {
+    int n = sprintf(buffer, "\n%s  %s!!-WARNING-!! %s=>%s %s \n",COLOR_NC,COLOR_YELLOW, COLOR_WHITE, COLOR_NC, message);
+    write(file_desc, buffer, n+1);
+  }else if (type == ERROR) {
+    int n = sprintf(buffer, "\n%s  %s!!-ERROR-!! %s=>%s %s \n",COLOR_NC,COLOR_RED, COLOR_WHITE, COLOR_NC, message);
+    write(file_desc, buffer, n+1);
+  }
 }
+
+
+
 
 char* str_copy(const char* word)
 {
@@ -72,17 +118,21 @@ option_t* get_first(option_t* list)
 option_t* partial_init(option_t*option,const char * key_word)
 {
   option_t* opt;
-  if ((opt = get_last(option)) == NULL){
-    opt = malloc(sizeof(option_t));
-    opt->parent = NULL;
-  }else{
-    opt->next = malloc(sizeof(option_t));
-    opt->next->parent = opt;
-  }
-  opt->next = NULL;
-  opt->name = str_copy(key_word);
+  char* name = str_copy(key_word);
+  option_t* ret = NULL;
 
-  return opt;
+  ret = malloc(sizeof(option_t));
+  if ((opt = get_last(option)) == NULL){
+    ret->parent = NULL;
+  }else{
+    opt->next = ret;
+    ret->parent = opt;
+  }
+
+  ret->next = NULL;
+  ret->name = name;
+
+  return ret;
 }
 
 option_t* init_void_option(option_t* option,const char* key_word, void (* f)())
@@ -142,7 +192,7 @@ bool is_many_sort_args(const char* param)
 }
 
 
-bool is_long_arg_without_value(char* param)
+bool is_long_arg_without_value(const char* param)
 {
   if(param == NULL || strlen(param) < 3 || param[0] != '-' || param[1] != '-') return false;
   for (int i = 2; i < strlen(param); i++) {
@@ -154,7 +204,7 @@ bool is_long_arg_without_value(char* param)
 }
 
 
-bool is_long_arg_with_value(char* param)
+bool is_long_arg_with_value(const char* param)
 {
   if (param == NULL || strlen(param) <= 4) return false; // --x=y
   char* tmp = strstr(param, "=");
@@ -162,19 +212,27 @@ bool is_long_arg_with_value(char* param)
          (tmp != NULL && (tmp-param > 1));
 }
 
+
+char* trim_pattern(const char* pattern)
+{
+  if (pattern == NULL || strlen(pattern) == 0) return NULL;
+  char* ret;
+  if (is_single_arg(pattern)) return str_copy(pattern+1);
+  else if (is_long_arg_without_value(pattern)) return str_copy(pattern+2);
+
+  // is_long_arg_with_value
+  ret = strpbrk(pattern, "=");
+  ret[0] = '\0';
+  char* tmp = str_copy(pattern);
+  ret[0] = '=';
+  return tmp;
+}
+
 dictionnary_t* matched(const char* key_word, dictionnary_t* dico)
 {
   if(dico == NULL) return NULL;
   int i=0;
-  char* pattern;
-
-  if (is_single_arg(key_word)) {
-    pattern = str_copy(key_word);
-  }else{
-    // add others ...
-    return NULL;
-  }
-
+  char* pattern = trim_pattern(key_word);
   dictionnary_t* tmp = dico;
   dictionnary_t* ret = NULL;
 
@@ -185,42 +243,94 @@ dictionnary_t* matched(const char* key_word, dictionnary_t* dico)
     }
     tmp = tmp->next;
   }
+  free(pattern);
 
+  if (ret != NULL && ret->used) return NULL;
   return ret;
 }
 
+
+option_t* init_option(option_t* options, dictionnary_t* dico,const char* argv)
+{
+  dico->used = true;
+  if (dico->type == VOID) {
+    options = init_void_option(options,dico->name, dico->action.option_void);
+  }else {
+    if (argv != NULL){
+      if (dico->type == INT) {
+        options = init_int_option(options,dico->name, dico->action.option_void,argv);
+      }else if (dico->type == FLOAT) {
+        options = init_float_option(options,dico->name, dico->action.option_float,argv);
+      }else if (dico->type == STRING) {
+        options = init_string_option(options,dico->name, dico->action.option_string,argv);
+      }else{/* ADD HERE YOUR TYPES HANDLERS */}
+    }else{
+      char t[100]={'\0'}; snprintf(t, 100, "There is no value for the argument %s ", dico->name);
+      alert(t, WARNING);
+    }
+  }
+  return options;
+}
 
 option_t* parser(int argc, const char* argv[], dictionnary_t* dico)
 {
   if (argc <= 1 || dico == NULL) return NULL;
   option_t* options = NULL;
   dictionnary_t* d = NULL;
+  char** tmp = NULL;
+  bool errors = false;
+  for (int i = 1; i < argc && !errors; i++) {
+    if (is_single_arg(argv[i])) {
+      if ((d = matched(argv[i], dico)) != NULL && d->nature == SORT) {
+        options = init_option(options, d, (i+1<argc)?argv[i+1]:NULL);
+        if (d->type != VOID) i++;
+      }else{
+        errors = true;
+        char t[100]={'\0'}; snprintf(t, 100, "Invalid option <<%s>> ", argv[i]);
+        alert(t, WARNING);
 
-  for (int i = 1; i < argc; i++) {
-    if ((d = matched(argv[i], dico)) != NULL) {
-      if (d->type == VOID) {
-        options = init_void_option(options,d->name, d->action.option_void);
-      }else if ( i+1<argc) {
-        switch (d->type) {
-          case INT:
-            options = init_int_option(options,d->name, d->action.option_void,argv[i+1]);
-          break;
-          case FLOAT:
-            options = init_float_option(options,d->name, d->action.option_float,argv[i+1]);
-          break;
-          case STRING:
-            options = init_string_option(options,d->name, d->action.option_string,argv[i+1]);
-          break;
+      }
+    }else if (is_many_sort_args(argv[i])) {
+      char* tmp = malloc(sizeof(char)*3);
+      tmp[0] = '-';
+      tmp[2] = '\0';
+      for (int j = 1; j < strlen(argv[i]) && !errors; j++) {
+        tmp[1] = (char)argv[i][j];
+        if ((d = matched(tmp, dico)) != NULL && d->type == VOID && d->nature == SORT) {
+          options = init_void_option(options,d->name, d->action.option_void);
+        }else{
+          errors = true;
+          char t[100]={'\0'}; snprintf(t, 100, "The option <<%s>> is not valid", tmp);
+          alert(t, WARNING);
         }
-        i++;
+      }
+      free(tmp);
+    }else if (is_long_arg_without_value(argv[i])) {
+      if ( (d = matched((argv[i]), dico)) != NULL && d->nature == LONG) {
+        options = init_void_option(options,d->name, d->action.option_void);
+      }else{
+        errors = true;
+        char t[100]={'\0'}; snprintf(t, 100, "The option <<%s>> is not valid", argv[i]);
+        alert(t, WARNING);
+      }
+    }else if (is_long_arg_with_value(argv[i])) {
+      if ((d = matched(argv[i]+2, dico)) != NULL && d->type != VOID) {
+        options = init_option(options,d,(strpbrk(argv[i], "=")+1));
+      }else{
+        errors = true;
+        char t[100]={'\0'}; snprintf(t, 100, "The option <<%s>> is not valid", argv[i]);
+        alert(t, WARNING);
       }
     }else{
-      printf("Something went wrong %d\n",i);
+      char t[100]={'\0'}; snprintf(t, 100, "I don't recognized this value <<%s>>", argv[i]);
+      alert(t, WARNING);
     }
   }
 
   return options;
 }
+
+
 
 
 dictionnary_t* base_register(dictionnary_t* parent, const char* pattern)
@@ -238,19 +348,31 @@ dictionnary_t* base_register(dictionnary_t* parent, const char* pattern)
     child = tmp->next;
   }
 
-  child->name = str_copy(pattern);
+  if (is_single_arg(pattern)) {
+    child->nature = SORT;
+  }else if (is_long_arg_without_value(pattern)) {
+    child->nature = LONG;
+  }else{
+    free_dictionnary(child);
+    return NULL;
+  }
+
+  child->name = trim_pattern(pattern);
+  child->used = false;
+
+  return child;
 }
 
-dictionnary_t* register_void(dictionnary_t* parent, const char* pattern, void (*function)() )
+dictionnary_t* register_void(dictionnary_t* parent, const char* pattern, void (*function)())
 {
   dictionnary_t* child = base_register(parent, pattern);
   child->action.option_void = function;
   child->type = VOID;
-
   if (parent == NULL) return child;
   return parent;
 }
-dictionnary_t* register_int(dictionnary_t* parent, const char* pattern, void (*function)(int) )
+
+dictionnary_t* register_int(dictionnary_t* parent, const char* pattern, void (*function)(int))
 {
   dictionnary_t* child = base_register(parent, pattern);
   child->action.option_int = function;
@@ -259,7 +381,8 @@ dictionnary_t* register_int(dictionnary_t* parent, const char* pattern, void (*f
   if (parent == NULL) return child;
   return parent;
 }
-dictionnary_t* register_float(dictionnary_t* parent, const char* pattern, void (*function)(float) )
+
+dictionnary_t* register_float(dictionnary_t* parent, const char* pattern, void (*function)(float))
 {
   dictionnary_t* child = base_register(parent, pattern);
   child->action.option_float = function;
@@ -268,7 +391,8 @@ dictionnary_t* register_float(dictionnary_t* parent, const char* pattern, void (
   if (parent == NULL) return child;
   return parent;
 }
-dictionnary_t* register_string(dictionnary_t* parent, const char* pattern, void (*function)(const char*) )
+
+dictionnary_t* register_string(dictionnary_t* parent, const char* pattern, void (*function)(const char*))
 {
   dictionnary_t* child = base_register(parent, pattern);
   child->action.option_string = function;
@@ -294,10 +418,11 @@ void free_option(option_t* option)
 void free_options(option_t* option)
 {
   if (option == NULL) return;
-  return free_options(get_first(option));
+  return free_option(get_first(option));
 }
 void free_dictionnary(dictionnary_t* dico)
 {
+  if (dico == NULL) return;
   free(dico->name);
   return free_dictionnary(dico->next);
 }
@@ -306,23 +431,14 @@ void free_dictionnary(dictionnary_t* dico)
 void execute(option_t* options)
 {
   if (options == NULL) return;
-  options = get_first(options);
-  option_t* tmp = options;
+
+  option_t* tmp = get_first(options);
   while (tmp != NULL) {
-    switch (tmp->type) {
-      case VOID:
-        tmp->action.option_void();
-        break;
-      case INT:
-        tmp->action.option_int(tmp->value.int_value);
-        break;
-      case FLOAT:
-        tmp->action.option_float(tmp->value.float_value);
-        break;
-      case STRING:
-        tmp->action.option_string(tmp->value.string_value);
-        break;
-    }
+    if (tmp->type == VOID) { tmp->action.option_void();}
+    else if (tmp->type == INT) { tmp->action.option_int(tmp->value.int_value);}
+    else if (tmp->type == FLOAT) { tmp->action.option_float(tmp->value.float_value);}
+    else if (tmp->type == STRING) { tmp->action.option_string(tmp->value.string_value);}
+    else {/* ERROR HERE, IF YUO ADD OTHER TYPE */}
     tmp = tmp->next;
   }
 }

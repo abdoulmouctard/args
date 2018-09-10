@@ -14,14 +14,18 @@ int main(int argc, char const *argv[])
   dictionnary_generator();
   option_t* options = parser(argc, argv, DICTIONNARY);
   execute(options);
+  free_options(options);
+  free_dictionnary(DICTIONNARY);
   return 0;
 }
 
 
 dictionnary_t* dictionnary_generator()
 {
-  DICTIONNARY = register_void(DICTIONNARY, "-a", f_void);
-  DICTIONNARY = register_int(DICTIONNARY, "-b", f_int);
+  DICTIONNARY = register_void(DICTIONNARY, "-x", f_void);
+  DICTIONNARY = register_void(DICTIONNARY, "-y", f_void);
+  DICTIONNARY = register_void(DICTIONNARY, "--b", f_void);
+  DICTIONNARY = register_int(DICTIONNARY, "--bbc", f_int);
   DICTIONNARY = register_float(DICTIONNARY, "-c", f_float);
   DICTIONNARY = register_string(DICTIONNARY, "-d", f_string);
 
